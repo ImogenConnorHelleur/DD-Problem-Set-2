@@ -64,7 +64,8 @@ names(data) <- tolower(names(data))
 data <- data %>%
   mutate(area_m_2_numeric = if_else(area_m_2_ == "2,000 m^2 or greater.", 
                                     transaction_price_total_ / transaction_price_unit_price_m_2_, 
-                                    as.numeric(area_m_2_)))
+                                    as.numeric(area_m_2_))) %>%
+  mutate(price_per_m2 = transaction_price_total_ / area_m_2_numeric) 
 
 #Analysis#######################################################################
 #Question 1
@@ -82,11 +83,8 @@ question2_data <- data %>%
   group_by(city_town_ward_village) %>%
   sample_n(150)
 
-#Question 3#####################################################################
-
-#Get a column for price per m2
-question3_data <- question2_data %>%
-  mutate(price_per_m2 = transaction_price_total_ / area_m_2_numeric) 
+#summary stats for our understanding############################################
+question3_data <- question2_data 
 
 #get summary table of sd and mean for each ward in sample populations
 question3_data_summary <- question3_data %>%
@@ -103,10 +101,12 @@ ggplot(question3_data) +
   labs(title = "Boxplot comparisions of sample distributions for each ward (n = 150)",
        x = "Ward",
        y = "Price per m^2",
-       caption = "Not showing outliers.") +
+       caption = "Not showing outliers \nSample means shown as dots") +
   scale_y_continuous(limits = quantile(question3_data$price_per_m2, c(0.1, 0.9))) +
-  theme_bw() #+
-  # geom_errorbar(ymin = 1270825.6, ymax = 1750965.1118313, width = 0.2)
+  stat_summary(aes(x = city_town_ward_village,
+                   y = price_per_m2), fun = "mean")
+
+#Question 3#####################################################################
 
 #set up two sample t-tests for each pair of wards https://www.datacamp.com/tutorial/t-tests-r-tutorial
 #Chuo and Minato
@@ -185,3 +185,56 @@ ggplot(question4_data) +
        x = "Ward",
        y = "Mean price per m^2")
   
+#Question 5#####################################################################
+#calculate control limits for each ward alpha = 0.05
+
+population_summary <- data %>%
+  group_by(city_town_ward_village) %>%
+  summarise(mean_price_per_m2 = mean(price_per_m2),
+            sd_price_per_m2 = sd(price_per_m2))
+  
+question5_data <- population_summary %>%
+  mutate(n = 150) %>% #sample size
+  mutate(z = 1.96) %>%
+  mutate(UCL = mean_price_per_m2 + (z * sd_price_per_m2 / sqrt(n))) %>%
+  mutate(LCL = mean_price_per_m2 - (z * sd_price_per_m2 / sqrt(n)))
+
+#get table of just control limits to join to main table
+control_limits_data <- question5_data %>%
+  select(city_town_ward_village, UCL, LCL)
+  
+#compare population data to control limits
+question5_potentailly_undervalued <- data %>%
+  left_join(control_limits_data, by = "city_town_ward_village") %>%
+  mutate(potentially_undervalued = if_else(price_per_m2 < LCL,
+                                           TRUE,
+                                           FALSE))
+
+ggplot(filter(data, city_town_ward_village == "Chuo Ward"), 
+       aes(x=price_per_m2)) + 
+  geom_density() +
+  geom_vline(xintercept = 1277278.1) +
+  geom_vline(xintercept = 1962481.2)+
+  geom_vline(xintercept = 1619879.6,
+             colour = "red") +
+  labs(title = "Chuo Ward distribution with control limits for alpha = 5%")
+
+
+#for interest
+ggplot(question3_data) +
+  geom_boxplot(aes(x = type,
+                   y = price_per_m2),
+               outlier.shape = NA) +
+  labs(title = "Boxplot comparisions of sample distributions for each land type (n = 150)",
+       x = "Land type",
+       y = "Price per m^2",
+       caption = "Not showing outliers \nSample means shown as dots") +
+  scale_y_continuous(limits = quantile(question3_data$price_per_m2, c(0.1, 0.9))) +
+  stat_summary(aes(x = type,
+                   y = price_per_m2), fun = "mean")
+
+ggplot(data = question3_data,
+       aes(x = year_of_construction,
+           y = price_per_m2)) +
+  geom_point()+ 
+  geom_smooth(method='lm', formula= y~x)
